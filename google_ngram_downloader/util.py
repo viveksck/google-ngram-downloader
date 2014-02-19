@@ -5,29 +5,18 @@ from itertools import product, chain, groupby
 from string import ascii_lowercase, digits
 
 import requests
+import csv
+import zipfile, StringIO
 
 
 URL_TEMPLATE = 'http://storage.googleapis.com/books/ngrams/books/{}'
-# URL_TEMPLATE = 'http://localhost:8001/{}'
-
 FILE_TEMPLATE = 'googlebooks-eng-all-{ngram_len}gram-{version}-{index}.gz'
+FILE_TEMPLATE_1M = 'googlebooks-eng-1M-{ngram_len}gram-{version}-{index}.csv.zip'
 
 
 Record = collections.namedtuple('Record', 'ngram year match_count volume_count')
 
-
-def readline_google_store(ngram_len, chunk_size=1024 ** 2, verbose=False):
-    """Iterate over the data in the Google ngram collectioin.
-
-        :param int ngram_len: the length of ngrams to be streamed.
-        :param int chunk_size: the size the chunks of raw compressed data.
-        :param bool verbose: if `True`, then the debug information is shown to
-        `sys.stderr`.
-
-        :returns: a iterator over triples `(fname, url, records)`
-
-    """
-
+def readline_google_store_default(ngram_len, chunk_size = 1024 ** 2, verbose = False):
     for fname, url, request in iter_google_store(ngram_len, verbose=verbose):
         dec = zlib.decompressobj(32 + zlib.MAX_WBITS)
 
@@ -53,6 +42,40 @@ def readline_google_store(ngram_len, chunk_size=1024 ** 2, verbose=False):
 
         yield fname, url, lines()
 
+def readline_google_store_1M(ngram_len, verbose = False):
+    for fname, url, request in iter_google_store(ngram_len, verbose=verbose, use1M=True):
+        def lines():
+            s = StringIO.StringIO(request.content)
+            z = zipfile.ZipFile(s)
+            for name in z.namelist():
+                data = StringIO.StringIO(z.read(name))
+                reader = csv.reader(data)
+                for line in reader:
+                    ngram_data = line[0].split('\t')
+                    assert(len(ngram_data) == 5)
+                    ngram = ngram_data[0]
+                    year =ngram_data[1]
+                    match_count = ngram_data[2]
+                    volume_count = ngram_data[4]
+                    yield Record(ngram, year, match_count, volume_count)
+
+        yield fname, url, lines()
+
+def readline_google_store(ngram_len, chunk_size=1024 ** 2, use1M = False, verbose=False):
+    """Iterate over the data in the Google ngram collectioin.
+
+        :param int ngram_len: the length of ngrams to be streamed.
+        :param int chunk_size: the size the chunks of raw compressed data.
+        :param bool verbose: if `True`, then the debug information is shown to
+        `sys.stderr`.
+
+        :returns: a iterator over triples `(fname, url, records)`
+
+    """
+    if not use1M:
+      return readline_google_store_default(ngram_len, chunk_size, verbose)
+    else:
+      return readline_google_store_1M(ngram_len, verbose)
 
 def ngram_to_cooc(ngram, count, index):
     ngram = ngram.split()
@@ -88,19 +111,29 @@ def count_coccurrence(records, index):
     return counter
 
 
-def iter_google_store(ngram_len, verbose=False):
+def iter_google_store(ngram_len, verbose=False, use1M=False):
     """Iterate over the collection files stored at Google."""
-    version = '20120701'
+
+    url_template = URL_TEMPLATE
+    if not use1M:
+        version = '20120701'
+        file_template = FILE_TEMPLATE
+        use_stream = True
+    else:
+        version = '20090715'
+        file_template = FILE_TEMPLATE_1M
+        use_stream = False
+
     session = requests.Session()
 
     for index in get_indices(ngram_len):
-        fname = FILE_TEMPLATE.format(
+        fname = file_template.format(
             ngram_len=ngram_len,
             version=version,
             index=index,
         )
 
-        url = URL_TEMPLATE.format(fname)
+        url = url_template.format(fname)
 
         if verbose:
             sys.stderr.write(
@@ -111,7 +144,7 @@ def iter_google_store(ngram_len, verbose=False):
             )
             sys.stderr.flush()
 
-        request = session.get(url, stream=True)
+        request = session.get(url, stream=use_stream)
         assert request.status_code == 200
 
         yield fname, url, request
@@ -119,8 +152,10 @@ def iter_google_store(ngram_len, verbose=False):
         if verbose:
             sys.stderr.write('\n')
 
+def get_str_from_array(a):
+    return [str(x) for x in a]
 
-def get_indices(ngram_len):
+def get_indices(ngram_len, use1M = False):
     """Generate the file indeces depening on the ngram length, based on version 20120701.
 
     For 1grams it is::
@@ -168,6 +203,25 @@ def get_indices(ngram_len):
     more details.
 
     """
+
+    if use1M:
+        ngram1 = numpy.arange(0,10)
+
+        ngram2 = numpy.arange(10,100)
+        ngram2 = numpy.append(ngram1, ngram2)
+
+        ngram3 = numpy.arange(100,200)
+        ngram3 = numpy.append(ngram2, ngram3)
+
+        ngram4 = numpy.arange(100,400)
+        ngram4 = numpy.append(ngram2, ngram4)
+
+        ngram5 = numpy.arange(100, 800)
+        ngram5 = numpy.append(ngram2, ngram5)
+
+        D = {1 : get_str_from_array(ngram1), 2 : get_str_from_array(ngram2), 3: get_str_from_array(ngram3), 4 : get_str_from_array(ngram4), 5: get_str_from_array(ngram5)}
+        return D[ngram_len]
+
     other_indices = ('other', 'punctuation')
 
     if ngram_len == 1:
