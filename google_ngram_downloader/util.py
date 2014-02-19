@@ -49,15 +49,21 @@ def readline_google_store_1M(ngram_len, verbose = False):
             z = zipfile.ZipFile(s)
             for name in z.namelist():
                 data = StringIO.StringIO(z.read(name))
-                reader = csv.reader(data)
+                reader = csv.reader(data, quoting=csv.QUOTE_NONE)
                 for line in reader:
-                    ngram_data = line[0].split('\t')
-                    assert(len(ngram_data) == 5)
+                    if not line:
+                      continue
+                    ngram_data = line[0].rsplit('\t', 4)
+                    if len(ngram_data) != 5:
+                      sys.stderr.write('Skipping ngram {} incorrectlength\n'.format(ngram_data))
+                      sys.stderr.flush()
+                      continue
                     ngram = ngram_data[0]
-                    year =ngram_data[1]
+                    ngram_unicode = ngram.decode('utf-8')
+                    year = ngram_data[1]
                     match_count = ngram_data[2]
                     volume_count = ngram_data[4]
-                    yield Record(ngram, year, match_count, volume_count)
+                    yield Record(ngram_unicode, year, match_count, volume_count)
 
         yield fname, url, lines()
 
