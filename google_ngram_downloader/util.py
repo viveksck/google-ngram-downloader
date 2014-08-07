@@ -7,10 +7,13 @@ from string import ascii_lowercase, digits
 import requests
 import csv
 import zipfile, StringIO
+import numpy
+import urllib
+import wget
 
 
 URL_TEMPLATE = 'http://storage.googleapis.com/books/ngrams/books/{}'
-FILE_TEMPLATE = 'googlebooks-eng-all-{ngram_len}gram-{version}-{index}.gz'
+FILE_TEMPLATE = 'googlebooks-eng-fiction-all-{ngram_len}gram-{version}-{index}.gz'
 FILE_TEMPLATE_1M = 'googlebooks-eng-1M-{ngram_len}gram-{version}-{index}.csv.zip'
 
 
@@ -132,7 +135,7 @@ def iter_google_store(ngram_len, verbose=False, use1M=False):
 
     session = requests.Session()
 
-    for index in get_indices(ngram_len):
+    for index in get_indices(ngram_len, use1M):
         fname = file_template.format(
             ngram_len=ngram_len,
             version=version,
@@ -150,10 +153,9 @@ def iter_google_store(ngram_len, verbose=False, use1M=False):
             )
             sys.stderr.flush()
 
-        request = session.get(url, stream=use_stream)
-        assert request.status_code == 200
-
-        yield fname, url, request
+        
+        wget.download(url)           
+        yield fname, url, None
 
         if verbose:
             sys.stderr.write('\n')
